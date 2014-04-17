@@ -513,6 +513,7 @@ mod rust {
         use libc;
         let BUFSIZE = 64*1024;
 
+        // XXX: This will break when `Vec`'s default allocator changes
         let buf: *mut libc::c_void = unsafe { libc::malloc(BUFSIZE as libc::size_t) };
 
         let v: Vec<u8> = unsafe { Vec::from_raw_parts(BUFSIZE, BUFSIZE, buf as *mut u8) };
