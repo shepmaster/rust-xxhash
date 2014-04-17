@@ -1,13 +1,16 @@
-#[crate_id="rust-xxhash#0.0"];
-#[crate_type="lib"];
+#![crate_id="rust-xxhash#0.0"]
+#![crate_type="lib"]
 
-#[deny(warnings)];
-#[allow(non_camel_case_types, uppercase_variables)];
+#![deny(warnings)]
+#![allow(non_camel_case_types, uppercase_variables)]
 
-#[feature(default_type_params)];
+#![feature(default_type_params)]
 
 #[cfg(test)]
 extern crate test;
+
+#[cfg(test)]
+extern crate libc;
 
 pub use xxhash::{XXState,XXHasher,xxh32};
 
