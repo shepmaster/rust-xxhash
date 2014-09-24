@@ -1,8 +1,8 @@
-#![crate_id="rust-xxhash#0.0"]
+#![crate_name="xxhash"]
 #![crate_type="lib"]
 
 #![deny(warnings)]
-#![allow(non_camel_case_types, uppercase_variables)]
+#![allow(bad_style)]
 
 #![feature(default_type_params)]
 
@@ -12,10 +12,5 @@ extern crate test;
 #[cfg(test)]
 extern crate libc;
 
-pub use xxhash::{XXState,XXHasher,xxh32};
-
-#[cfg(target_endian = "big")]
-#[static_assert]
-static little_endian_only_sorry :bool=false;
-
-pub mod xxhash;
+pub mod xxh32;
+pub mod xxh64;
