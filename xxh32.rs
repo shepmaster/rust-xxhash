@@ -247,29 +247,9 @@ mod c {
     use libc;
     use test::test::Bencher;
     use std::num::{div_rem};
+    use ffi::*;
 
     static PRIME : c_uint = 2654435761;
-
-    #[repr(C)]
-    enum XXH_Endianess { XXH_BigEndian=0, XXH_LittleEndian=1 }
-
-    #[cfg(clang)]
-    #[link(name="xxhash-clang")]
-    extern {
-        fn XXH32(input: *const c_void, len:c_int, seed: u32)-> c_uint;
-        fn XXH32_init(seed: u32) -> *mut c_void;
-        fn XXH32_update(state: *mut c_void, input: *const c_void, len: c_int, endian: XXH_Endianess) -> bool;
-        fn XXH32_digest(state: *mut c_void) -> u32;
-    }
-
-    #[cfg(gcc)]
-    #[link(name="xxhash-gcc")]
-    extern {
-        fn XXH32(input: *const c_void, len:c_int, seed: u32)-> c_uint;
-        fn XXH32_init(seed: u32) -> *mut c_void;
-        fn XXH32_update(state: *mut c_void, input: *const c_void, len: c_int, endian: XXH_Endianess) -> bool;
-        fn XXH32_digest(state: *mut c_void) -> u32;
-    }
 
     #[test] // the xxhash benchmark's sanity test
     fn test() {
