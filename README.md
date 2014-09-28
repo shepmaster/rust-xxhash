@@ -1,51 +1,23 @@
 A Rust implementation of [xxHash](http://code.google.com/p/xxhash/).
 
-### Build:
+    $ ./xxhash --test --bench
 
-    $ ./build.sh
+    running 13 tests
+    test xxh64::test_chunks ... ok
+    test xxh64::test_hash_idempotent ... ok
+    test xxh64::test_hash_no_bytes_dropped_64 ... ok
+    test xxh64::test_hash_no_bytes_dropped_32 ... ok
+    test xxh64::test_hash_no_concat_alias ... ok
+    test xxh64::test_hash_uint ... ok
+    test xxh64::test_oneshot ... ok
+    test xxh64::bench_64k_oneshot       ... bench:     16599 ns/iter (+/- 138) = 3948 MB/s
+    test xxh64::bench_long_str          ... bench:       213 ns/iter (+/- 3) = 2093 MB/s
+    test xxh64::bench_str_of_8_bytes    ... bench:        31 ns/iter (+/- 2) = 258 MB/s
+    test xxh64::bench_str_over_8_bytes  ... bench:        79 ns/iter (+/- 0) = 126 MB/s
+    test xxh64::bench_str_under_8_bytes ... bench:        55 ns/iter (+/- 3) = 54 MB/s
+    test xxh64::bench_u64               ... bench:        48 ns/iter (+/- 3) = 166 MB/s
 
-You can choose the C compiler by setting `--cfg gcc` or `--cfg clang` in build.sh.
+    test result: ok. 7 passed; 0 failed; 0 ignored; 6 measured
 
-### Test:
 
-    $ ./rust-xxhash --test --bench
-
-    running 25 tests
-    test xxhash::c::test_chunks ... ok
-    test xxhash::c::test ... ok
-    test xxhash::rust::test ... ok
-    test xxhash::rust::test_chunks ... ok
-    <snip benchmarks>
-
-    test result: ok. 4 passed; 0 failed; 0 ignored; 21 measured
-
-### Use:
-
-```rust
-let mut xxh: XXHState = XXHState::new(seed);
-for chunk in v.chunks(64) {
-    xxh.update(chunk);
-}
-
-let result = xxh.digest();
-assert_eq!(result, expected);
-```
-
-### Benchmark (MB/s, bigger is better, x86_64):
-
-Test    | SipHash | xxHash gcc | xxHash clang | xxHash Rust |
-----|---:|----:|----:|----:|
-7-byte chunks  | 166 |  277 |  224 |  **285** |
-8-byte chunks  | 315 |  **479** |  309 |  **479** |
-15-byte chunks | 260 |  **445** |  245 |  444 |
-16-byte chunks | 389 |  788 | **1099** | 1034 |
-32-byte chunks | 448 | 1273 | 1638 | **1641** |
-64-byte chunks | 474 | 1868 | 2226 | **2303** |
-oneshot        | 514 | 3480 | **3894** | 3855 |
-
-SipHash is the Rust implementation in `std::hash`.
-
-All tests are done processing a 64 kB uninitialized array. I've applied all optimizations everywhere that didn't cause the whole benchmark to get optimized out.
-
-These numbers are just some benchmark results, nothing more.
 
