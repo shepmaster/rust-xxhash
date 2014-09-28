@@ -1,12 +1,11 @@
 #![crate_name="xxhash"]
 #![crate_type="lib"]
 
-#![allow(dead_assignment)] // macro
+#![allow(dead_assignment)] // `read_ptr!`
+#![feature(default_type_params, macro_rules, phase)]
 
-#![feature(default_type_params, globs, macro_rules, phase)]
-
-#[cfg(test)] #[phase(plugin, link)] extern crate log;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+extern crate test;
 
 
 pub mod xxh64 {
@@ -16,7 +15,7 @@ pub mod xxh64 {
     use std::hash::{Writer,Hash,Hasher};
     use std::default::Default;
     
-    #[cfg(test)] use test::*;
+    #[cfg(test)] use test::Bencher;
     
     // large prime, new_with_seed(0) is so boring
     static HAPPY_SEED: u64 = 18446744073709551557_u64;
@@ -28,8 +27,26 @@ pub mod xxh64 {
     static PRIME5: u64 =      2870177450012600261_u64;
     
     fn rotl64(x: u64, b: uint) -> u64 { #![inline(always)]
-        ((x << b) | (x >> (64 - b)))
+        (x << b) | (x >> (64 - b))
     }
+    
+    pub fn oneshot(input: &[u8], seed: u64) -> u64 { #![inline]
+        let mut state = XXState::new_with_seed(seed);
+        state.update(input);
+        state.digest()
+    }
+    
+    pub struct XXState {
+        memory: [u64, ..4],
+        v1: u64,
+        v2: u64,
+        v3: u64,
+        v4: u64,
+        total_len: u64,
+        seed: u64,
+        memsize: uint,
+    }
+    
     
     // read an integer, advance the pointer by the appropriate amount
     // and do the endian dance
@@ -41,35 +58,20 @@ pub mod xxh64 {
         data.to_le()
     }))
 
-    pub fn oneshot(input: &[u8], seed: u64) -> u64 {
-        let mut state = XX64State::new_with_seed(seed);
-        state.update(input);
-        state.digest()
-    }
-    
-    pub struct XX64State {
-        memory: [u64, ..4],
-        v1: u64,
-        v2: u64,
-        v3: u64,
-        v4: u64,
-        total_len: u64,
-        seed: u64,
-        memsize: uint,
-    }
-    
-    impl XX64State {
-        pub fn new_with_seed(seed: u64) -> XX64State { #![inline]
-            let mut state: XX64State = unsafe { uninitialized() };
+    impl XXState {
+        /// xxHash is keyed off one seed.
+        pub fn new_with_seed(seed: u64) -> XXState { #![inline]
+            let mut state: XXState = unsafe { uninitialized() };
             state.reset(seed);
             state
         }
 
-        pub fn new() -> XX64State { #![inline]
-            XX64State::new_with_seed(HAPPY_SEED)
+        
+        pub fn new() -> XXState { #![inline]
+            XXState::new_with_seed(HAPPY_SEED)
         }
         
-
+        /// Reset to the initial state.
         pub fn reset(&mut self, seed: u64) { #![inline]
             self.seed = seed;
             self.v1 = seed + PRIME1 + PRIME2;
@@ -80,27 +82,38 @@ pub mod xxh64 {
             self.memsize = 0;
         }
 
+        /// This is where you feed your data in.
         pub fn update(&mut self, input: &[u8]) { #![inline] unsafe {
+            // justification for `unsafe`: This is one of the few algorithms that really are 
+            // sensitive to safe Rust's overflow checks, as it was designed to make use of 
+            // instruction-level parallelism. The optimized form is fast enough to saturate 
+            // the *memory bandwidth* on low-end machines.
+            //
+            // Besides, it's still much cleaner than the C version.
+            
             let mem: *mut u8 = transmute(&self.memory);
             let mut rem: uint = input.len();
             let mut data: *const u8 = input.repr().data;
 
             self.total_len += rem as u64;
 
+            // not enough data for one 32-byte chunk, 
+            // so just fill the buffer and return.    
             if self.memsize + rem < 32 {
-                // not enough data for one 32-byte chunk, so just fill the buffer and return.
                 let dst: *mut u8 = mem.offset(self.memsize as int);
                 copy_memory(dst, data, rem);
                 self.memsize += rem;
                 return;
             }
 
+            // some data left from previous update
+            // fill the buffer and eat it    
             if self.memsize != 0 {
-                // some data left from previous update
-                // fill the buffer and eat it
                 let dst: *mut u8 = mem.offset(self.memsize as int);
                 let bump: uint = 32 - self.memsize;
                 copy_memory(dst, data, bump);
+
+                // the advance of `p` is hidden behind three macros.
                 let mut p: *const u8 = transmute(mem);
 
                 macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
@@ -109,6 +122,7 @@ pub mod xxh64 {
                     $v += read!(u64) * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
                 }))
                 
+                // detaching these from main memory does good things to performance
                 let mut v1: u64 = self.v1;
                 let mut v2: u64 = self.v2;
                 let mut v3: u64 = self.v3;
@@ -116,11 +130,12 @@ pub mod xxh64 {
 
                 eat!(v1); eat!(v2); eat!(v3); eat!(v4);
 
+                // save the state
                 self.v1 = v1;
                 self.v2 = v2;
                 self.v3 = v3;
                 self.v4 = v4;
-                
+
                 data = data.offset(bump as int);
                 rem -= bump;
                 self.memsize = 0;
@@ -133,11 +148,13 @@ pub mod xxh64 {
                     $v += read!(u64) * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
                 }))
                 
+                // again, go faster stripes
                 let mut v1: u64 = self.v1;
                 let mut v2: u64 = self.v2;
                 let mut v3: u64 = self.v3;
                 let mut v4: u64 = self.v4;
 
+                // the main loop: eat whole chunks
                 while rem >= 32 {
                     eat!(v1); eat!(v2); eat!(v3); eat!(v4);
                     rem -= 32;
@@ -149,17 +166,20 @@ pub mod xxh64 {
                 self.v4 = v4;
             }
 
+            // we have data left, so save it
             if rem > 0 {
                 copy_memory(mem, data, rem);
                 self.memsize = rem;
             }
         }}
         
+        /// Compute the hash. This can be used for intermediate values too.
         pub fn digest(&self) -> u64 { #![inline] unsafe {
             let mut rem = self.memsize;
             let mut h64: u64 = if self.total_len < 32 {
                 self.seed + PRIME5
             } else {
+                // we have saved state, make use of it
                 let mut v1: u64 = self.v1;
                 let mut v2: u64 = self.v2;
                 let mut v3: u64 = self.v3;
@@ -169,18 +189,19 @@ pub mod xxh64 {
 
                 macro_rules! permute(($v: ident) => ({
                     $v *= PRIME2; $v = rotl64($v, 31); $v *= PRIME1; h ^= $v; h = h * PRIME1 + PRIME4;
-                }))                
+                }))
+                // this step does not exist in xxh32
                 permute!(v1); permute!(v2); permute!(v3); permute!(v4);
                 
                 h
             };
-            
+
+            // and now we eat all the remaining bytes.            
             let mut p: *const u8 = transmute(&self.memory);
             macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
 
-            
             h64 += self.total_len as u64;
-
+            
             while rem >= 8 {
                 let mut k1: u64 = read!(u64) * PRIME2; k1 = rotl64(k1, 31); k1 *= PRIME1;
                 h64 ^= k1; 
@@ -188,7 +209,7 @@ pub mod xxh64 {
                 rem -= 8;
             }
             
-            while rem >= 4 {
+            if rem >= 4 {
                 h64 ^= read!(u32) as u64 * PRIME1;
                 h64 = rotl64(h64, 23) * PRIME2 + PRIME3;
                 rem -= 4;
@@ -211,83 +232,62 @@ pub mod xxh64 {
 
     }
 
-    impl Writer for XX64State {
+    impl Writer for XXState {
         fn write(&mut self, msg: &[u8]) { #![inline]
             self.update(msg);
         }
     }
     
-    impl Clone for XX64State {
-        
-        fn clone(&self) -> XX64State { #![inline]
+    impl Clone for XXState {
+        fn clone(&self) -> XXState { #![inline]
             *self
         }
     }
     
-    pub struct XX64Hasher {
+    /// `XXHasher` computes the xxHash64 algorithm from a stream of bytes.
+    pub struct XXHasher {
         seed: u64
     }
     
-    impl XX64Hasher {
-        pub fn new() -> XX64Hasher { #![inline]
-            XX64Hasher::new_with_seed(18446744073709551557u64)
+    impl XXHasher {
+        pub fn new() -> XXHasher { #![inline]
+            XXHasher::new_with_seed(18446744073709551557u64)
         }
         
-        pub fn new_with_seed(seed: u64) -> XX64Hasher { #![inline]
-            XX64Hasher { seed: seed }
+        pub fn new_with_seed(seed: u64) -> XXHasher { #![inline]
+            XXHasher { seed: seed }
         }
     }
     
-    impl Hasher<XX64State> for XX64Hasher {        
-        fn hash<T: Hash<XX64State>>(&self, value: &T) -> u64 { #![inline]
-            let mut state = XX64State::new_with_seed(self.seed);
+    impl Hasher<XXState> for XXHasher {        
+        fn hash<T: Hash<XXState>>(&self, value: &T) -> u64 { #![inline]
+            let mut state = XXState::new_with_seed(self.seed);
             value.hash(&mut state);
             state.digest()
         }
     }
 
-    impl Default for XX64Hasher {
-        fn default() -> XX64Hasher { #![inline]
-            XX64Hasher::new()
+    impl Default for XXHasher {
+        fn default() -> XXHasher { #![inline]
+            XXHasher::new()
         }
     }
 
-    pub fn hash<T: Hash<XX64State>>(value: &T) -> u64 { #![inline]
-        let mut state = XX64State::new();
+    pub fn hash<T: Hash<XXState>>(value: &T) -> u64 { #![inline]
+        let mut state = XXState::new();
         value.hash(&mut state);
         state.digest()
     }
 
-    pub fn hash_with_seed<T: Hash<XX64State>>(seed: u64, value: &T) -> u64 { #![inline]
-        let mut state = XX64State::new_with_seed(seed);
+    pub fn hash_with_seed<T: Hash<XXState>>(seed: u64, value: &T) -> u64 { #![inline]
+        let mut state = XXState::new_with_seed(seed);
         value.hash(&mut state);
         state.digest()
     }
 
-    #[test]
-    fn test_oneshot() {
-        test_base(|v, seed|{
-            let mut state = XX64State::new_with_seed(seed);
-            state.update(v);
-            state.digest()
-        })
-    }
-
-    #[test]
-    fn test_chunks() {
-        test_base(|v, seed|{
-            let mut state = XX64State::new_with_seed(seed);
-            for chunk in v.chunks(15) {
-                state.update(chunk);
-            }
-            state.digest()
-        })
-    }
-
-
+    /// the official sanity test
     #[cfg(test)]
     fn test_base(f: |&[u8], u64| -> u64) { #![inline(always)]
-        // the official sanity test
         static BUFSIZE: uint = 101;
         static PRIME: u32 = 2654435761;
 
@@ -324,10 +324,35 @@ pub mod xxh64 {
         bench.bytes = BUFSIZE as u64;
     }
     
+    #[test]
+    fn test_oneshot() {
+        test_base(|v, seed|{
+            let mut state = XXState::new_with_seed(seed);
+            state.update(v);
+            state.digest()
+        })
+    }
+
+    #[test]
+    fn test_chunks() {
+        test_base(|v, seed|{
+            let mut state = XXState::new_with_seed(seed);
+            for chunk in v.chunks(15) {
+                state.update(chunk);
+            }
+            state.digest()
+        })
+    }
+
     #[bench]
     fn bench_64k_oneshot(b: &mut Bencher) {
         bench_base(b, |v| { oneshot(v, 0) })
     }
+    
+    /*
+     * The following tests match those of SipHash.
+     */
+    
     
     #[test] #[cfg(target_arch = "arm")]
     fn test_hash_uint() {
