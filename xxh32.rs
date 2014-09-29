@@ -1,49 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
-//! The 64-bit variant of xxHash.
-//!
-//! This is a *very* fast hash, running circles around all major hashing 
-//! algorithms, capable of saturating the *memory bandwidth* of older
-//! hardware. The implementation has been extensively micro-optimized to
-//! take full advantage of the instruction-level parallelism of modern
-//! hardware.
-//!
-//! In terms of security, it's as good as a 64-bit hash can be, on par
-//! with SipHash in every respect. That's not saying much though,
-//! 64-bit hashes are *not* suitable for real cryptography.
-//!
-//! https://code.google.com/p/xxhash/
-//! http://fastcompression.blogspot.com/2014/07/xxhash-wider-64-bits.html
-//! https://en.wikipedia.org/wiki/Birthday_attack
-
-
-
-// ILP is the heart of this algorithm. The optimized version of xxh32 gains
-// over 2x from `-C no-vectorize-slp`. This means `unsafe`. The very first 
-// iteration got an immediate 4x speed boost just from removing the bounds 
-// checks.
-//
-// It's probably best to consider this code as an excercise in writing
-// good tests.
-
-#![crate_name="xxhash"]
-#![crate_type="lib"]
-
-#![allow(dead_assignment)] // `read_ptr!`
-#![feature(default_type_params, macro_rules, phase)]
-
-#[cfg(test)]
-extern crate test;
-
-use std::mem::{uninitialized, transmute};
+use std::mem::{uninitialized,transmute};
 use std::raw::{Repr};
 use std::ptr::{copy_memory};
 use std::hash::{Hash, Hasher, Writer};
@@ -51,39 +6,15 @@ use std::default::Default;
 
 #[cfg(test)] use test::Bencher;
 
-pub mod xxh32;
-
-
-// large prime, new_with_seed(0) is so boring
-static HAPPY_SEED: u64 = 18446744073709551557_u64;
-
-static PRIME1: u64 =     11400714785074694791_u64;
-static PRIME2: u64 =     14029467366897019727_u64;
-static PRIME3: u64 =      1609587929392839161_u64;
-static PRIME4: u64 =      9650029242287828579_u64;
-static PRIME5: u64 =      2870177450012600261_u64;
-
-fn rotl64(x: u64, b: uint) -> u64 { #![inline(always)]
-    (x << b) | (x >> (64 - b))
+fn rotl32(x: u32, b: uint) -> u32 { #![inline(always)]
+    ((x << b) | (x >> (32 - b)))
 }
 
-pub fn oneshot(input: &[u8], seed: u64) -> u64 { #![inline]
-    let mut state = XXState::new_with_seed(seed);
-    state.update(input);
-    state.digest()
-}
-
-pub struct XXState {
-    memory: [u64, ..4],
-    v1: u64,
-    v2: u64,
-    v3: u64,
-    v4: u64,
-    total_len: u64,
-    seed: u64,
-    memsize: uint,
-}
-
+static PRIME1: u32 = 2654435761;
+static PRIME2: u32 = 2246822519;
+static PRIME3: u32 = 3266489917;
+static PRIME4: u32 = 668265263;
+static PRIME5: u32 = 374761393;
 
 // read an integer, advance the pointer by the appropriate amount
 // and do the endian dance
@@ -95,21 +26,33 @@ macro_rules! read_ptr(($p:ident, $size:ty) => ({
     data.to_le()
 }))
 
+pub fn oneshot(input: &[u8], seed: u32) -> u32 {
+    let mut state = XXState::new_with_seed(seed);
+    state.update(input);
+    state.digest()
+}
+
+pub struct XXState {
+    // field names match the C implementation
+    memory: [u32, ..4],
+    total_len: u64,
+    v1: u32,
+    v2: u32,
+    v3: u32,
+    v4: u32,
+    memsize: uint,
+    seed: u32,
+}
+
 impl XXState {
-    /// Unless testing, randomize the seed for each set of
-    /// hashes, e.g. when creating a new `HashMap`.
-    pub fn new_with_seed(seed: u64) -> XXState { #![inline]
+    pub fn new_with_seed(seed: u32) -> XXState { #![inline]
+        // no need to write it twice
         let mut state: XXState = unsafe { uninitialized() };
         state.reset(seed);
         state
     }
-    
-    pub fn new() -> XXState { #![inline]
-        XXState::new_with_seed(HAPPY_SEED)
-    }
-    
-    /// Reinitialize. The next input will start a new hash.
-    pub fn reset(&mut self, seed: u64) { #![inline]
+
+    pub fn reset(&mut self, seed: u32) { #![inline]
         self.seed = seed;
         self.v1 = seed + PRIME1 + PRIME2;
         self.v2 = seed + PRIME2;
@@ -119,7 +62,6 @@ impl XXState {
         self.memsize = 0;
     }
 
-    /// This is where you feed your data in.
     pub fn update(&mut self, input: &[u8]) { #![inline] unsafe {
         let mem: *mut u8 = transmute(&self.memory);
         let mut rem: uint = input.len();
@@ -127,70 +69,60 @@ impl XXState {
 
         self.total_len += rem as u64;
 
-        // not enough data for one 32-byte chunk, 
-        // so just fill the buffer and return.    
-        if self.memsize + rem < 32 {
+        if self.memsize + rem < 16 {
+            // not enough data for one 32-byte chunk, so just fill the buffer and return.
             let dst: *mut u8 = mem.offset(self.memsize as int);
             copy_memory(dst, data, rem);
             self.memsize += rem;
             return;
         }
 
-        // some data left from previous update
-        // fill the buffer and eat it    
         if self.memsize != 0 {
+            // some data left from previous update
+            // fill the buffer and eat it
             let dst: *mut u8 = mem.offset(self.memsize as int);
-            let bump: uint = 32 - self.memsize;
+            let bump: uint = 16 - self.memsize;
             copy_memory(dst, data, bump);
-
-            // `read_ptr!` target
             let mut p: *const u8 = transmute(mem);
 
             macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
 
             macro_rules! eat(($v: ident) => ({
-                $v += read!(u64) * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
+                $v += read!(u32) * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
             }))
             
-            // Detaching these does good things to performance.
-            // LLVM is not quite smart enough to do it on its own.
-            let mut v1: u64 = self.v1;
-            let mut v2: u64 = self.v2;
-            let mut v3: u64 = self.v3;
-            let mut v4: u64 = self.v4;
+            let mut v1: u32 = self.v1;
+            let mut v2: u32 = self.v2;
+            let mut v3: u32 = self.v3;
+            let mut v4: u32 = self.v4;
 
             eat!(v1); eat!(v2); eat!(v3); eat!(v4);
 
-            // save the state
             self.v1 = v1;
             self.v2 = v2;
             self.v3 = v3;
             self.v4 = v4;
-
+            
             data = data.offset(bump as int);
             rem -= bump;
             self.memsize = 0;
         }
-        
+
         {
             macro_rules! read(($size:ty) => (read_ptr!(data, $size)))
-            
-            // Note how `$v` does not depend on any other `v` in this phase.
-            // This is critical for speed.
+
             macro_rules! eat(($v: ident) => ({
-                $v += read!(u64) * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
+                $v += read!(u32) * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
             }))
             
-            // again, go faster stripes
-            let mut v1: u64 = self.v1;
-            let mut v2: u64 = self.v2;
-            let mut v3: u64 = self.v3;
-            let mut v4: u64 = self.v4;
+            let mut v1: u32 = self.v1;
+            let mut v2: u32 = self.v2;
+            let mut v3: u32 = self.v3;
+            let mut v4: u32 = self.v4;
 
-            // the main loop: eat whole chunks
-            while rem >= 32 {
+            while rem >= 16 {
                 eat!(v1); eat!(v2); eat!(v3); eat!(v4);
-                rem -= 32;
+                rem -= 16;
             }
 
             self.v1 = v1;
@@ -199,70 +131,68 @@ impl XXState {
             self.v4 = v4;
         }
 
-        // we have data left, so save it
         if rem > 0 {
             copy_memory(mem, data, rem);
             self.memsize = rem;
         }
     }}
-    
-    /// Compute the hash. This can be used for intermediate values too.
-    pub fn digest(&self) -> u64 { #![inline] unsafe {
+
+    /// Can be called on intermediate states
+    pub fn digest(&self) -> u32 { #![inline] unsafe {
         let mut rem = self.memsize;
-        let mut h64: u64 = if self.total_len < 32 {
+        let mut h32: u32 = if self.total_len < 16 {
             self.seed + PRIME5
         } else {
-            // we have saved state
-            let mut v1: u64 = self.v1;
-            let mut v2: u64 = self.v2;
-            let mut v3: u64 = self.v3;
-            let mut v4: u64 = self.v4;
-            
-            let mut h = rotl64(v1, 1) + rotl64(v2, 7) + rotl64(v3, 12) + rotl64(v4, 18);
-
-            macro_rules! permute(($v: ident) => ({
-                $v *= PRIME2; $v = rotl64($v, 31); $v *= PRIME1; h ^= $v; h = h * PRIME1 + PRIME4;
-            }))
-            // this step does not exist in xxh32
-            permute!(v1); permute!(v2); permute!(v3); permute!(v4);
-            
-            h
+            rotl32(self.v1, 1) + rotl32(self.v2, 7) + rotl32(self.v3, 12) + rotl32(self.v4, 18)
         };
 
-        // and now we eat all the remaining bytes.
         let mut p: *const u8 = transmute(&self.memory);
         macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
 
-        h64 += self.total_len as u64;
-        
-        while rem >= 8 {
-            let mut k1: u64 = read!(u64) * PRIME2; k1 = rotl64(k1, 31); k1 *= PRIME1;
-            h64 ^= k1; 
-            h64 = rotl64(h64, 27) * PRIME1 + PRIME4;
-            rem -= 8;
-        }
-        
-        if rem >= 4 {
-            h64 ^= read!(u32) as u64 * PRIME1;
-            h64 = rotl64(h64, 23) * PRIME2 + PRIME3;
+        h32 += self.total_len as u32;
+
+        while rem >= 4 {
+            h32 += read!(u32) * PRIME3;
+            h32 = rotl32(h32, 17) * PRIME4;
             rem -= 4;
         }
         
         while rem > 0 {
-            h64 ^= read!(u8) as u64 * PRIME5;
-            h64 = rotl64(h64, 11) * PRIME1;
+            h32 += read!(u8) as u32 * PRIME5;
+            h32 = rotl32(h32, 11) * PRIME1;
             rem -= 1;
         }
         
-        h64 ^= h64 >> 33;
-        h64 *= PRIME2;
-        h64 ^= h64 >> 29;
-        h64 *= PRIME3;
-        h64 ^= h64 >> 32;
-        
-        h64
-    }}
+        h32 ^= h32 >> 15;
+        h32 *= PRIME2;
+        h32 ^= h32 >> 13;
+        h32 *= PRIME3;
+        h32 ^= h32 >> 16;
 
+        h32
+    }}
+}
+
+pub struct XXHasher {
+    seed: u32
+}
+
+impl XXHasher {
+    pub fn new() -> XXHasher { #![inline]
+        XXHasher::new_with_seed(0)
+    }
+
+    pub fn new_with_seed(seed: u32) -> XXHasher { #![inline]
+        XXHasher { seed: seed }
+    }
+}
+
+impl Hasher<XXState> for XXHasher {
+    fn hash<T: Hash<XXState>>(&self, value: &T) -> u64 {
+        let mut state = XXState::new_with_seed(self.seed);
+        value.hash(&mut state);
+        state.digest() as u64
+    }
 }
 
 impl Writer for XXState {
@@ -277,29 +207,6 @@ impl Clone for XXState {
     }
 }
 
-/// `XXHasher` computes the xxHash64 algorithm from a stream of bytes.
-pub struct XXHasher {
-    seed: u64
-}
-
-impl XXHasher {
-    pub fn new() -> XXHasher { #![inline]
-        XXHasher::new_with_seed(18446744073709551557u64)
-    }
-    
-    pub fn new_with_seed(seed: u64) -> XXHasher { #![inline]
-        XXHasher { seed: seed }
-    }
-}
-
-impl Hasher<XXState> for XXHasher {        
-    fn hash<T: Hash<XXState>>(&self, value: &T) -> u64 { #![inline]
-        let mut state = XXState::new_with_seed(self.seed);
-        value.hash(&mut state);
-        state.digest()
-    }
-}
-
 impl Default for XXHasher {
     fn default() -> XXHasher { #![inline]
         XXHasher::new()
@@ -307,20 +214,20 @@ impl Default for XXHasher {
 }
 
 pub fn hash<T: Hash<XXState>>(value: &T) -> u64 { #![inline]
-    let mut state = XXState::new();
+    let mut state = XXState::new_with_seed(0);
     value.hash(&mut state);
-    state.digest()
+    state.digest() as u64
 }
 
 pub fn hash_with_seed<T: Hash<XXState>>(seed: u64, value: &T) -> u64 { #![inline]
-    let mut state = XXState::new_with_seed(seed);
+    let mut state = XXState::new_with_seed(seed as u32);
     value.hash(&mut state);
-    state.digest()
+    state.digest() as u64
 }
 
 /// the official sanity test
 #[cfg(test)]
-fn test_base(f: |&[u8], u64| -> u64) { #![inline(always)]
+fn test_base(f: |&[u8], u32| -> u32) { #![inline(always)]
     static BUFSIZE: uint = 101;
     static PRIME: u32 = 2654435761;
 
@@ -331,21 +238,22 @@ fn test_base(f: |&[u8], u64| -> u64) { #![inline(always)]
         random *= random;
     }
     
-    let test = |size: uint, seed: u64, expected: u64| {
+    let test = |size: uint, seed: u32, expected: u32| {
         let result = f(buf.slice_to(size), seed);
         assert_eq!(result, expected);
     };
-
-    test(1,                0,             0x4FCE394CC88952D8);
-    test(1,                PRIME as u64,  0x739840CB819FA723);
-    test(14,               0,             0xCFFA8DB881BC3A3D);
-    test(14,               PRIME as u64,  0x5B9611585EFCC9CB);
-    test(BUFSIZE,          0,             0x0EAB543384F878AD);
-    test(BUFSIZE,          PRIME as u64,  0xCAA65939306F1E21);
+    
+    
+    test(1,                0,      0xB85CBEE5);        
+    test(1,                PRIME,  0xD5845D64);        
+    test(14,               0,      0xE5AA0AB4);        
+    test(14,               PRIME,  0x4481951D);        
+    test(BUFSIZE,          0,      0x1F1AA412);        
+    test(BUFSIZE,          PRIME,  0x498EC8E2);        
 }
 
 #[cfg(test)]
-fn bench_base(bench: &mut Bencher, f: |&[u8]| -> u64 ) { #![inline(always)]
+fn bench_base(bench: &mut Bencher, f: |&[u8]| -> u32 ) { #![inline(always)]
     static BUFSIZE: uint = 64*1024;
 
     let mut v: Vec<u8> = Vec::with_capacity(BUFSIZE);
