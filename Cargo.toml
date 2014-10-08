@@ -1,0 +1,5 @@
+[package]
+
+name = "xxhash"
+version = "0.0.1"
+authors = ["György Andrasek <jurily@gmail.com>"]
