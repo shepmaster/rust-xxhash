@@ -188,7 +188,7 @@ impl XXHasher {
 }
 
 impl Hasher<XXState> for XXHasher {
-    fn hash<T: Hash<XXState>>(&self, value: &T) -> u64 {
+    fn hash<Sized? T: Hash<XXState>>(&self, value: &T) -> u64 {
         let mut state = XXState::new_with_seed(self.seed);
         value.hash(&mut state);
         state.digest() as u64
