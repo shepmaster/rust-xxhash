@@ -37,7 +37,7 @@
 #![crate_name="xxhash"]
 #![crate_type="lib"]
 
-#![allow(dead_assignment)] // `read_ptr!`
+#![allow(unused_assignments)] // `read_ptr!`
 #![feature(default_type_params, macro_rules, phase)]
 
 #[cfg(test)]
