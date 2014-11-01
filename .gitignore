@@ -1,6 +1,5 @@
 build/
 .kdev4/
-.*
 *.kdev4
 /target
 Cargo.lock
