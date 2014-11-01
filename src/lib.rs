@@ -37,7 +37,7 @@
 #![crate_name="xxhash"]
 #![crate_type="lib"]
 
-#![allow(dead_assignment)] // `read_ptr!`
+#![allow(unused_assignments)] // `read_ptr!`
 #![feature(default_type_params, macro_rules, phase)]
 
 #[cfg(test)]
@@ -293,7 +293,7 @@ impl XXHasher {
 }
 
 impl Hasher<XXState> for XXHasher {        
-    fn hash<T: Hash<XXState>>(&self, value: &T) -> u64 { #![inline]
+    fn hash<Sized? T: Hash<XXState>>(&self, value: &T) -> u64 { #![inline]
         let mut state = XXState::new_with_seed(self.seed);
         value.hash(&mut state);
         state.digest()
