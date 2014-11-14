@@ -1,4 +1,5 @@
 use std::mem::{uninitialized,transmute};
+use std::num::Int;
 use std::raw::{Repr};
 use std::ptr::{copy_memory};
 use std::hash::{Hash, Hasher, Writer};
@@ -90,7 +91,7 @@ impl XXState {
             macro_rules! eat(($v: ident) => ({
                 $v += read!(u32) * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
             }))
-            
+
             let mut v1: u32 = self.v1;
             let mut v2: u32 = self.v2;
             let mut v3: u32 = self.v3;
@@ -102,7 +103,7 @@ impl XXState {
             self.v2 = v2;
             self.v3 = v3;
             self.v4 = v4;
-            
+
             data = data.offset(bump as int);
             rem -= bump;
             self.memsize = 0;
@@ -114,7 +115,7 @@ impl XXState {
             macro_rules! eat(($v: ident) => ({
                 $v += read!(u32) * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
             }))
-            
+
             let mut v1: u32 = self.v1;
             let mut v2: u32 = self.v2;
             let mut v3: u32 = self.v3;
@@ -156,13 +157,13 @@ impl XXState {
             h32 = rotl32(h32, 17) * PRIME4;
             rem -= 4;
         }
-        
+
         while rem > 0 {
             h32 += read!(u8) as u32 * PRIME5;
             h32 = rotl32(h32, 11) * PRIME1;
             rem -= 1;
         }
-        
+
         h32 ^= h32 >> 15;
         h32 *= PRIME2;
         h32 ^= h32 >> 13;
@@ -237,19 +238,19 @@ fn test_base(f: |&[u8], u32| -> u32) { #![inline(always)]
         buf.push((random >> 24) as u8);
         random *= random;
     }
-    
+
     let test = |size: uint, seed: u32, expected: u32| {
         let result = f(buf.slice_to(size), seed);
         assert_eq!(result, expected);
     };
-    
-    
-    test(1,                0,      0xB85CBEE5);        
-    test(1,                PRIME,  0xD5845D64);        
-    test(14,               0,      0xE5AA0AB4);        
-    test(14,               PRIME,  0x4481951D);        
-    test(BUFSIZE,          0,      0x1F1AA412);        
-    test(BUFSIZE,          PRIME,  0x498EC8E2);        
+
+
+    test(1,                0,      0xB85CBEE5);
+    test(1,                PRIME,  0xD5845D64);
+    test(14,               0,      0xE5AA0AB4);
+    test(14,               PRIME,  0x4481951D);
+    test(BUFSIZE,          0,      0x1F1AA412);
+    test(BUFSIZE,          PRIME,  0x498EC8E2);
 }
 
 #[cfg(test)]
@@ -260,7 +261,7 @@ fn bench_base(bench: &mut Bencher, f: |&[u8]| -> u32 ) { #![inline(always)]
     for i in range(0, BUFSIZE) {
         v.push(i as u8);
     }
-    
+
     bench.iter( || f(v.as_slice()) );
     bench.bytes = BUFSIZE as u64;
 }
