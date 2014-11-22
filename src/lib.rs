@@ -1,13 +1,3 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! The 64-bit variant of xxHash.
 //!
 //! This is a *very* fast hash, running circles around all major hashing
@@ -16,20 +6,14 @@
 //! take full advantage of the instruction-level parallelism of modern
 //! hardware.
 //!
-//! In terms of security, it's as good as a 64-bit hash can be, on par
-//! with SipHash in every respect. That's not saying much though,
-//! 64-bit hashes are *not* suitable for real cryptography.
+//! Do not use this for cryptography.
 //!
 //! https://code.google.com/p/xxhash/
-//! http://fastcompression.blogspot.com/2014/07/xxhash-wider-64-bits.html
-//! https://en.wikipedia.org/wiki/Birthday_attack
 
 
 
 // ILP is the heart of this algorithm. The optimized version of xxh32 gains
-// over 2x from `-C no-vectorize-slp`. This means `unsafe`. The very first
-// iteration got an immediate 4x speed boost just from removing the bounds
-// checks.
+// over 2x from `-C no-vectorize-slp`. This means `unsafe`.
 //
 // It's probably best to consider this code as an excercise in writing
 // good tests.
