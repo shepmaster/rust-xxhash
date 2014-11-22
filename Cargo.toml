@@ -4,4 +4,4 @@ name = "xxhash"
 description = "The xxHash hashing algorithm"
 version = "0.0.1"
 authors = ["György Andrasek <jurily@gmail.com>"]
-license = "Public Domain"
+license = "MIT"
