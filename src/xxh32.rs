@@ -17,16 +17,6 @@ static PRIME3: u32 = 3266489917;
 static PRIME4: u32 = 668265263;
 static PRIME5: u32 = 374761393;
 
-// read an integer, advance the pointer by the appropriate amount
-// and do the endian dance
-macro_rules! read_ptr(($p:ident, $size:ty) => ({
-    let mut bp: *const $size = transmute($p);
-    let data: $size = *bp;
-    bp = bp.offset(1);
-    $p = transmute(bp);
-    data.to_le()
-}))
-
 pub fn oneshot(input: &[u8], seed: u32) -> u32 {
     let mut state = XXState::new_with_seed(seed);
     state.update(input);
@@ -86,11 +76,12 @@ impl XXState {
             let bump: uint = 16 - self.memsize;
             copy_memory(dst, data, bump);
             let mut p: *const u8 = transmute(mem);
+            let mut r: uint = 32;
 
-            macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
+            macro_rules! read(() => (read_ptr!(p, r, u32)))
 
             macro_rules! eat(($v: ident) => ({
-                $v += read!(u32) * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
+                $v += read!() * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
             }))
 
             let mut v1: u32 = self.v1;
@@ -111,10 +102,10 @@ impl XXState {
         }
 
         {
-            macro_rules! read(($size:ty) => (read_ptr!(data, $size)))
+            macro_rules! read(() => (read_ptr!(data, rem, u32)))
 
             macro_rules! eat(($v: ident) => ({
-                $v += read!(u32) * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
+                $v += read!() * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
             }))
 
             let mut v1: u32 = self.v1;
@@ -124,7 +115,6 @@ impl XXState {
 
             while rem >= 16 {
                 eat!(v1); eat!(v2); eat!(v3); eat!(v4);
-                rem -= 16;
             }
 
             self.v1 = v1;
@@ -149,20 +139,18 @@ impl XXState {
         };
 
         let mut p: *const u8 = transmute(&self.memory);
-        macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
+        macro_rules! read(($size:ty) => (read_ptr!(p, rem, $size) as u32))
 
         h32 += self.total_len as u32;
 
         while rem >= 4 {
             h32 += read!(u32) * PRIME3;
             h32 = rotl32(h32, 17) * PRIME4;
-            rem -= 4;
         }
 
         while rem > 0 {
-            h32 += read!(u8) as u32 * PRIME5;
+            h32 += read!(u8) * PRIME5;
             h32 = rotl32(h32, 11) * PRIME1;
-            rem -= 1;
         }
 
         h32 ^= h32 >> 15;

@@ -21,8 +21,10 @@
 #![crate_name="xxhash"]
 #![crate_type="lib"]
 
-#![allow(unused_assignments)] // `read_ptr!`
+#![allow(unused_assignments, unused_variables)] // `read_ptr!`
 #![feature(default_type_params, macro_rules, phase)]
+
+#[phase(plugin, link)] extern crate core;
 
 #[cfg(test)]
 extern crate test;
@@ -36,6 +38,7 @@ use std::default::Default;
 
 #[cfg(test)] use test::Bencher;
 
+pub mod macros;
 pub mod xxh32;
 
 
@@ -69,17 +72,6 @@ pub struct XXState {
     seed: u64,
     memsize: uint,
 }
-
-
-// read an integer, advance the pointer by the appropriate amount
-// and do the endian dance
-macro_rules! read_ptr(($p:ident, $size:ty) => ({
-    let mut bp: *const $size = transmute($p);
-    let data: $size = *bp;
-    bp = bp.offset(1);
-    $p = transmute(bp);
-    data.to_le()
-}))
 
 impl XXState {
     /// Unless testing, randomize the seed for each set of
@@ -131,11 +123,12 @@ impl XXState {
 
             // `read_ptr!` target
             let mut p: *const u8 = transmute(mem);
+            let mut r = 32;
 
-            macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
+            macro_rules! read(() => (read_ptr!(p, r, u64)))
 
             macro_rules! eat(($v: ident) => ({
-                $v += read!(u64) * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
+                $v += read!() * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
             }))
 
             // Detaching these does good things to performance.
@@ -159,12 +152,12 @@ impl XXState {
         }
 
         {
-            macro_rules! read(($size:ty) => (read_ptr!(data, $size)))
+            macro_rules! read(() => (read_ptr!(data, rem, u64)))
 
             // Note how `$v` does not depend on any other `v` in this phase.
             // This is critical for speed.
             macro_rules! eat(($v: ident) => ({
-                $v += read!(u64) * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
+                $v += read!() * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
             }))
 
             // again, go faster stripes
@@ -176,7 +169,6 @@ impl XXState {
             // the main loop: eat whole chunks
             while rem >= 32 {
                 eat!(v1); eat!(v2); eat!(v3); eat!(v4);
-                rem -= 32;
             }
 
             self.v1 = v1;
@@ -217,7 +209,7 @@ impl XXState {
 
         // and now we eat all the remaining bytes.
         let mut p: *const u8 = transmute(&self.memory);
-        macro_rules! read(($size:ty) => (read_ptr!(p, $size)))
+        macro_rules! read(($size:ty) => (read_ptr!(p, rem, $size) as u64))
 
         h64 += self.total_len as u64;
 
@@ -225,19 +217,16 @@ impl XXState {
             let mut k1: u64 = read!(u64) * PRIME2; k1 = rotl64(k1, 31); k1 *= PRIME1;
             h64 ^= k1;
             h64 = rotl64(h64, 27) * PRIME1 + PRIME4;
-            rem -= 8;
         }
 
         if rem >= 4 {
-            h64 ^= read!(u32) as u64 * PRIME1;
+            h64 ^= read!(u32) * PRIME1;
             h64 = rotl64(h64, 23) * PRIME2 + PRIME3;
-            rem -= 4;
         }
 
         while rem > 0 {
-            h64 ^= read!(u8) as u64 * PRIME5;
+            h64 ^= read!(u8) * PRIME5;
             h64 = rotl64(h64, 11) * PRIME1;
-            rem -= 1;
         }
 
         h64 ^= h64 >> 33;
