@@ -125,11 +125,11 @@ impl XXState {
             let mut p: *const u8 = transmute(mem);
             let mut r = 32;
 
-            macro_rules! read(() => (read_ptr!(p, r, u64)))
+            macro_rules! read(() => (read_ptr!(p, r, u64)));
 
             macro_rules! eat(($v: ident) => ({
                 $v += read!() * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
-            }))
+            }));
 
             // Detaching these does good things to performance.
             // LLVM is not quite smart enough to do it on its own.
@@ -152,13 +152,13 @@ impl XXState {
         }
 
         {
-            macro_rules! read(() => (read_ptr!(data, rem, u64)))
+            macro_rules! read(() => (read_ptr!(data, rem, u64)));
 
             // Note how `$v` does not depend on any other `v` in this phase.
             // This is critical for speed.
             macro_rules! eat(($v: ident) => ({
                 $v += read!() * PRIME2; $v = rotl64($v, 31); $v *= PRIME1;
-            }))
+            }));
 
             // again, go faster stripes
             let mut v1: u64 = self.v1;
@@ -200,7 +200,7 @@ impl XXState {
 
             macro_rules! permute(($v: ident) => ({
                 $v *= PRIME2; $v = rotl64($v, 31); $v *= PRIME1; h ^= $v; h = h * PRIME1 + PRIME4;
-            }))
+            }));
             // this step does not exist in xxh32
             permute!(v1); permute!(v2); permute!(v3); permute!(v4);
 
@@ -209,7 +209,7 @@ impl XXState {
 
         // and now we eat all the remaining bytes.
         let mut p: *const u8 = transmute(&self.memory);
-        macro_rules! read(($size:ty) => (read_ptr!(p, rem, $size) as u64))
+        macro_rules! read(($size:ty) => (read_ptr!(p, rem, $size) as u64));
 
         h64 += self.total_len as u64;
 

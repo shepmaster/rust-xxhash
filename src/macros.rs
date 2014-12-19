@@ -14,4 +14,4 @@ macro_rules! read_ptr(($p:ident, $rem:ident, $size:ty) => ({
     $rem -= mem::size_of::<$size>();
     $p = mem::transmute(dp);
     data.to_le()
-}))
+}));
