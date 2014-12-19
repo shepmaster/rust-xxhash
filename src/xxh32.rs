@@ -78,11 +78,11 @@ impl XXState {
             let mut p: *const u8 = transmute(mem);
             let mut r: uint = 32;
 
-            macro_rules! read(() => (read_ptr!(p, r, u32)))
+            macro_rules! read(() => (read_ptr!(p, r, u32)));
 
             macro_rules! eat(($v: ident) => ({
                 $v += read!() * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
-            }))
+            }));
 
             let mut v1: u32 = self.v1;
             let mut v2: u32 = self.v2;
@@ -102,11 +102,11 @@ impl XXState {
         }
 
         {
-            macro_rules! read(() => (read_ptr!(data, rem, u32)))
+            macro_rules! read(() => (read_ptr!(data, rem, u32)));
 
             macro_rules! eat(($v: ident) => ({
                 $v += read!() * PRIME2; $v = rotl32($v, 13); $v *= PRIME1;
-            }))
+            }));
 
             let mut v1: u32 = self.v1;
             let mut v2: u32 = self.v2;
@@ -139,7 +139,7 @@ impl XXState {
         };
 
         let mut p: *const u8 = transmute(&self.memory);
-        macro_rules! read(($size:ty) => (read_ptr!(p, rem, $size) as u32))
+        macro_rules! read(($size:ty) => (read_ptr!(p, rem, $size) as u32));
 
         h32 += self.total_len as u32;
 
