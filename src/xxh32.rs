@@ -26,7 +26,7 @@ pub fn oneshot(input: &[u8], seed: u32) -> u32 {
 #[deriving(Copy)]
 pub struct XXState {
     // field names match the C implementation
-    memory: [u32, ..4],
+    memory: [u32; 4],
     total_len: u64,
     v1: u32,
     v2: u32,

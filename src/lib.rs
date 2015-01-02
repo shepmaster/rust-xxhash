@@ -63,7 +63,7 @@ pub fn oneshot(input: &[u8], seed: u64) -> u64 { #![inline]
 
 #[deriving(Copy)]
 pub struct XXState {
-    memory: [u64, ..4],
+    memory: [u64; 4],
     v1: u64,
     v2: u64,
     v3: u64,
