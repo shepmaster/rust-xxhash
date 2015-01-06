@@ -23,7 +23,7 @@ pub fn oneshot(input: &[u8], seed: u32) -> u32 {
     state.digest()
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct XXState {
     // field names match the C implementation
     memory: [u32; 4],
@@ -163,7 +163,7 @@ impl XXState {
     }}
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct XXHasher {
     seed: u32
 }
