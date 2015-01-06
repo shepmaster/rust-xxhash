@@ -61,7 +61,7 @@ pub fn oneshot(input: &[u8], seed: u64) -> u64 { #![inline]
     state.digest()
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct XXState {
     memory: [u64, ..4],
     v1: u64,
@@ -253,7 +253,7 @@ impl Clone for XXState {
 }
 
 /// `XXHasher` computes the xxHash64 algorithm from a stream of bytes.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct XXHasher {
     seed: u64
 }
