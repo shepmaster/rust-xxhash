@@ -22,9 +22,8 @@
 #![crate_type="lib"]
 
 #![allow(unused_assignments, unused_variables)] // `read_ptr!`
-#![feature(default_type_params, macro_rules, phase)]
 
-#[phase(plugin, link)] extern crate core;
+#[macro_use] extern crate core;
 
 #[cfg(test)]
 extern crate test;
@@ -41,17 +40,22 @@ use std::default::Default;
 pub mod macros;
 pub mod xxh32;
 
+// TODO: remove this once the int RFC lands
+#[allow(non_camel_case_types)]
+pub type isize = int;
+#[allow(non_camel_case_types)]
+pub type usize = uint;
 
 // large prime, new_with_seed(0) is so boring
-static HAPPY_SEED: u64 = 18446744073709551557_u64;
+const HAPPY_SEED: u64 = 18446744073709551557_u64;
 
-static PRIME1: u64 =     11400714785074694791_u64;
-static PRIME2: u64 =     14029467366897019727_u64;
-static PRIME3: u64 =      1609587929392839161_u64;
-static PRIME4: u64 =      9650029242287828579_u64;
-static PRIME5: u64 =      2870177450012600261_u64;
+const PRIME1: u64 =     11400714785074694791_u64;
+const PRIME2: u64 =     14029467366897019727_u64;
+const PRIME3: u64 =      1609587929392839161_u64;
+const PRIME4: u64 =      9650029242287828579_u64;
+const PRIME5: u64 =      2870177450012600261_u64;
 
-fn rotl64(x: u64, b: uint) -> u64 { #![inline(always)]
+fn rotl64(x: u64, b: usize) -> u64 { #![inline(always)]
     (x << b) | (x >> (64 - b))
 }
 
@@ -70,7 +74,7 @@ pub struct XXState {
     v4: u64,
     total_len: u64,
     seed: u64,
-    memsize: uint,
+    memsize: usize,
 }
 
 impl XXState {
@@ -98,9 +102,9 @@ impl XXState {
     }
 
     /// This is where you feed your data in.
-    pub fn update(&mut self, input: &[u8]) { #![inline] unsafe {
+    pub fn update(&mut self, input: &[u8]) { unsafe {
         let mem: *mut u8 = transmute(&self.memory);
-        let mut rem: uint = input.len();
+        let mut rem: usize = input.len();
         let mut data: *const u8 = input.repr().data;
 
         self.total_len += rem as u64;
@@ -118,7 +122,7 @@ impl XXState {
         // fill the buffer and eat it
         if self.memsize != 0 {
             let dst: *mut u8 = mem.offset(self.memsize as int);
-            let bump: uint = 32 - self.memsize;
+            let bump: usize = 32 - self.memsize;
             copy_memory(dst, data, bump);
 
             // `read_ptr!` target
@@ -269,7 +273,8 @@ impl XXHasher {
 }
 
 impl Hasher<XXState> for XXHasher {
-    fn hash<Sized? T: Hash<XXState>>(&self, value: &T) -> u64 { #![inline]
+    fn hash<T: ?Sized + Hash<XXState>>(&self, value: &T) -> u64
+    {
         let mut state = XXState::new_with_seed(self.seed);
         value.hash(&mut state);
         state.digest()
@@ -282,7 +287,9 @@ impl Default for XXHasher {
     }
 }
 
-pub fn hash<T: Hash<XXState>>(value: &T) -> u64 { #![inline]
+pub fn hash<T: ?Sized + Hash<XXState>>(value: &T) -> u64
+{
+
     let mut state = XXState::new();
     value.hash(&mut state);
     state.digest()
@@ -296,8 +303,8 @@ pub fn hash_with_seed<T: Hash<XXState>>(seed: u64, value: &T) -> u64 { #![inline
 
 /// the official sanity test
 #[cfg(test)]
-fn test_base(f: |&[u8], u64| -> u64) { #![inline(always)]
-    static BUFSIZE: uint = 101;
+fn test_base<F>(f: F) where F: Fn(&[u8], u64) -> u64 {
+    static BUFSIZE: usize = 101;
     static PRIME: u32 = 2654435761;
 
     let mut random: u32 = PRIME;
@@ -307,7 +314,7 @@ fn test_base(f: |&[u8], u64| -> u64) { #![inline(always)]
         random *= random;
     }
 
-    let test = |size: uint, seed: u64, expected: u64| {
+    let test = |&: size: usize, seed: u64, expected: u64| {
         let result = f(buf.slice_to(size), seed);
         assert_eq!(result, expected);
     };
@@ -321,8 +328,11 @@ fn test_base(f: |&[u8], u64| -> u64) { #![inline(always)]
 }
 
 #[cfg(test)]
-fn bench_base(bench: &mut Bencher, f: |&[u8]| -> u64 ) { #![inline(always)]
-    static BUFSIZE: uint = 64*1024;
+#[inline(always)]
+fn bench_base<F>(bench: &mut Bencher, f: F )
+    where F: Fn(&[u8]) -> u64
+{
+    static BUFSIZE: usize = 64*1024;
 
     let mut v: Vec<u8> = Vec::with_capacity(BUFSIZE);
     for i in range(0, BUFSIZE) {
@@ -355,7 +365,7 @@ fn test_chunks() {
 
 #[bench]
 fn bench_64k_oneshot(b: &mut Bencher) {
-    bench_base(b, |v| { oneshot(v, 0) })
+    bench_base(b, |&: v| oneshot(v, 0))
 }
 
 /*
@@ -364,22 +374,22 @@ fn bench_64k_oneshot(b: &mut Bencher) {
 
 
 #[test] #[cfg(target_arch = "arm")]
-fn test_hash_uint() {
+fn test_hash_usize() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert!(hash(&(val as u64)) != hash(&(val as uint)));
-    assert_eq!(hash(&(val as u32)), hash(&(val as uint)));
+    assert!(hash(&(val as u64)) != hash(&(val as usize)));
+    assert_eq!(hash(&(val as u32)), hash(&(val as usize)));
 }
 #[test] #[cfg(target_arch = "x86_64")]
-fn test_hash_uint() {
+fn test_hash_usize() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert_eq!(hash(&(val as u64)), hash(&(val as uint)));
-    assert!(hash(&(val as u32)) != hash(&(val as uint)));
+    assert_eq!(hash(&(val as u64)), hash(&(val as usize)));
+    assert!(hash(&(val as u32)) != hash(&(val as usize)));
 }
 #[test] #[cfg(target_arch = "x86")]
-fn test_hash_uint() {
+fn test_hash_usize() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert!(hash(&(val as u64)) != hash(&(val as uint)));
-    assert_eq!(hash(&(val as u32)), hash(&(val as uint)));
+    assert!(hash(&(val as u64)) != hash(&(val as usize)));
+    assert_eq!(hash(&(val as u32)), hash(&(val as usize)));
 }
 
 #[test]
@@ -403,7 +413,7 @@ fn test_hash_no_bytes_dropped_64() {
     assert!(hash(&val) != hash(&zero_byte(val, 6)));
     assert!(hash(&val) != hash(&zero_byte(val, 7)));
 
-    fn zero_byte(val: u64, byte: uint) -> u64 {
+    fn zero_byte(val: u64, byte: usize) -> u64 {
         assert!(byte < 8);
         val & !(0xff << (byte * 8))
     }
@@ -418,7 +428,7 @@ fn test_hash_no_bytes_dropped_32() {
     assert!(hash(&val) != hash(&zero_byte(val, 2)));
     assert!(hash(&val) != hash(&zero_byte(val, 3)));
 
-    fn zero_byte(val: u32, byte: uint) -> u32 {
+    fn zero_byte(val: u32, byte: usize) -> u32 {
         assert!(byte < 4);
         val & !(0xff << (byte * 8))
     }
@@ -489,3 +499,6 @@ fn bench_u64(b: &mut Bencher) {
         hash(&u)
     })
 }
+
+
+

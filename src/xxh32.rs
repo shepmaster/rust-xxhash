@@ -7,7 +7,13 @@ use std::default::Default;
 
 #[cfg(test)] use test::Bencher;
 
-fn rotl32(x: u32, b: uint) -> u32 { #![inline(always)]
+// TODO: remove this once the int RFC lands
+#[allow(non_camel_case_types)]
+pub type isize = int;
+#[allow(non_camel_case_types)]
+pub type usize = uint;
+
+fn rotl32(x: u32, b: usize) -> u32 { #![inline(always)]
     ((x << b) | (x >> (32 - b)))
 }
 
@@ -32,7 +38,7 @@ pub struct XXState {
     v2: u32,
     v3: u32,
     v4: u32,
-    memsize: uint,
+    memsize: usize,
     seed: u32,
 }
 
@@ -54,9 +60,9 @@ impl XXState {
         self.memsize = 0;
     }
 
-    pub fn update(&mut self, input: &[u8]) { #![inline] unsafe {
+    pub fn update(&mut self, input: &[u8]) { unsafe {
         let mem: *mut u8 = transmute(&self.memory);
-        let mut rem: uint = input.len();
+        let mut rem: usize = input.len();
         let mut data: *const u8 = input.repr().data;
 
         self.total_len += rem as u64;
@@ -73,10 +79,10 @@ impl XXState {
             // some data left from previous update
             // fill the buffer and eat it
             let dst: *mut u8 = mem.offset(self.memsize as int);
-            let bump: uint = 16 - self.memsize;
+            let bump: usize = 16 - self.memsize;
             copy_memory(dst, data, bump);
             let mut p: *const u8 = transmute(mem);
-            let mut r: uint = 32;
+            let mut r: usize = 32;
 
             macro_rules! read(() => (read_ptr!(p, r, u32)));
 
@@ -130,7 +136,7 @@ impl XXState {
     }}
 
     /// Can be called on intermediate states
-    pub fn digest(&self) -> u32 { #![inline] unsafe {
+    pub fn digest(&self) -> u32 { unsafe {
         let mut rem = self.memsize;
         let mut h32: u32 = if self.total_len < 16 {
             self.seed + PRIME5
@@ -179,7 +185,7 @@ impl XXHasher {
 }
 
 impl Hasher<XXState> for XXHasher {
-    fn hash<Sized? T: Hash<XXState>>(&self, value: &T) -> u64 {
+    fn hash<T: ?Sized + Hash<XXState>>(&self, value: &T) -> u64 {
         let mut state = XXState::new_with_seed(self.seed);
         value.hash(&mut state);
         state.digest() as u64
@@ -218,8 +224,10 @@ pub fn hash_with_seed<T: Hash<XXState>>(seed: u64, value: &T) -> u64 { #![inline
 
 /// the official sanity test
 #[cfg(test)]
-fn test_base(f: |&[u8], u32| -> u32) { #![inline(always)]
-    static BUFSIZE: uint = 101;
+fn test_base<F>(f: F)
+    where F: Fn(&[u8], u32) -> u32
+{ #![inline(always)]
+    static BUFSIZE: usize = 101;
     static PRIME: u32 = 2654435761;
 
     let mut random: u32 = PRIME;
@@ -229,7 +237,7 @@ fn test_base(f: |&[u8], u32| -> u32) { #![inline(always)]
         random *= random;
     }
 
-    let test = |size: uint, seed: u32, expected: u32| {
+    let test = |&: size: usize, seed: u32, expected: u32| {
         let result = f(buf.slice_to(size), seed);
         assert_eq!(result, expected);
     };
@@ -244,21 +252,23 @@ fn test_base(f: |&[u8], u32| -> u32) { #![inline(always)]
 }
 
 #[cfg(test)]
-fn bench_base(bench: &mut Bencher, f: |&[u8]| -> u32 ) { #![inline(always)]
-    static BUFSIZE: uint = 64*1024;
+fn bench_base<F>(bench: &mut Bencher, f: F)
+    where F: Fn(&[u8]) -> u32
+{ #![inline(always)]
+    static BUFSIZE: usize = 64*1024;
 
     let mut v: Vec<u8> = Vec::with_capacity(BUFSIZE);
     for i in range(0, BUFSIZE) {
         v.push(i as u8);
     }
 
-    bench.iter( || f(v.as_slice()) );
+    bench.iter( |&:| f(v.as_slice()) );
     bench.bytes = BUFSIZE as u64;
 }
 
 #[test]
 fn test_oneshot() {
-    test_base(|v, seed|{
+    test_base(|&: v, seed|{
         let mut state = XXState::new_with_seed(seed);
         state.update(v);
         state.digest()
@@ -287,22 +297,22 @@ fn bench_64k_oneshot(b: &mut Bencher) {
 
 
 #[test] #[cfg(target_arch = "arm")]
-fn test_hash_uint() {
+fn test_hash_usize() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert!(hash(&(val as u64)) != hash(&(val as uint)));
-    assert_eq!(hash(&(val as u32)), hash(&(val as uint)));
+    assert!(hash(&(val as u64)) != hash(&(val as usize)));
+    assert_eq!(hash(&(val as u32)), hash(&(val as usize)));
 }
 #[test] #[cfg(target_arch = "x86_64")]
-fn test_hash_uint() {
+fn test_hash_usize() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert_eq!(hash(&(val as u64)), hash(&(val as uint)));
-    assert!(hash(&(val as u32)) != hash(&(val as uint)));
+    assert_eq!(hash(&(val as u64)), hash(&(val as usize)));
+    assert!(hash(&(val as u32)) != hash(&(val as usize)));
 }
 #[test] #[cfg(target_arch = "x86")]
-fn test_hash_uint() {
+fn test_hash_usize() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert!(hash(&(val as u64)) != hash(&(val as uint)));
-    assert_eq!(hash(&(val as u32)), hash(&(val as uint)));
+    assert!(hash(&(val as u64)) != hash(&(val as usize)));
+    assert_eq!(hash(&(val as u32)), hash(&(val as usize)));
 }
 
 #[test]
@@ -326,7 +336,7 @@ fn test_hash_no_bytes_dropped_64() {
     assert!(hash(&val) != hash(&zero_byte(val, 6)));
     assert!(hash(&val) != hash(&zero_byte(val, 7)));
 
-    fn zero_byte(val: u64, byte: uint) -> u64 {
+    fn zero_byte(val: u64, byte: usize) -> u64 {
         assert!(byte < 8);
         val & !(0xff << (byte * 8))
     }
@@ -341,7 +351,7 @@ fn test_hash_no_bytes_dropped_32() {
     assert!(hash(&val) != hash(&zero_byte(val, 2)));
     assert!(hash(&val) != hash(&zero_byte(val, 3)));
 
-    fn zero_byte(val: u32, byte: uint) -> u32 {
+    fn zero_byte(val: u32, byte: usize) -> u32 {
         assert!(byte < 4);
         val & !(0xff << (byte * 8))
     }
