@@ -23,6 +23,7 @@
 
 #![feature(int_uint)]
 #![allow(unused_assignments, unused_variables)] // `read_ptr!`
+#![allow(unstable)]
 
 #[macro_use] extern crate core;
 
