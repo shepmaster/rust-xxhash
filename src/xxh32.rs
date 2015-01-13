@@ -7,12 +7,6 @@ use std::default::Default;
 
 #[cfg(test)] use test::Bencher;
 
-// TODO: remove this once the int RFC lands
-#[allow(non_camel_case_types)]
-pub type isize = int;
-#[allow(non_camel_case_types)]
-pub type usize = uint;
-
 fn rotl32(x: u32, b: usize) -> u32 { #![inline(always)]
     ((x << b) | (x >> (32 - b)))
 }
@@ -24,13 +18,13 @@ static PRIME4: u32 = 668265263;
 static PRIME5: u32 = 374761393;
 
 pub fn oneshot(input: &[u8], seed: u32) -> u32 {
-    let mut state = XXState::new_with_seed(seed);
-    state.update(input);
-    state.digest()
+    let mut state = XXHasher::new_with_seed(seed);
+    state.write(input);
+    state.finish()
 }
 
 #[derive(Copy)]
-pub struct XXState {
+pub struct XXHasher {
     // field names match the C implementation
     memory: [u32; 4],
     total_len: u64,
@@ -42,25 +36,22 @@ pub struct XXState {
     seed: u32,
 }
 
-impl XXState {
-    pub fn new_with_seed(seed: u32) -> XXState { #![inline]
+impl XXHasher {
+    pub fn new_with_seed(seed: u32) -> XXHasher { #![inline]
         // no need to write it twice
-        let mut state: XXState = unsafe { uninitialized() };
-        state.reset(seed);
+        let mut state: XXHasher = unsafe { uninitialized() };
+        state.seed = seed;
+        state.reset();
         state
     }
 
-    pub fn reset(&mut self, seed: u32) { #![inline]
-        self.seed = seed;
-        self.v1 = seed + PRIME1 + PRIME2;
-        self.v2 = seed + PRIME2;
-        self.v3 = seed;
-        self.v4 = seed - PRIME1;
-        self.total_len = 0;
-        self.memsize = 0;
+    pub fn new() -> XXHasher { #![inline]
+        XXHasher::new_with_seed(0)
     }
+}
 
-    pub fn update(&mut self, input: &[u8]) { unsafe {
+impl Writer for XXHasher {
+    fn write(&mut self, input: &[u8]) { unsafe {
         let mem: *mut u8 = transmute(&self.memory);
         let mut rem: usize = input.len();
         let mut data: *const u8 = input.repr().data;
@@ -134,9 +125,22 @@ impl XXState {
             self.memsize = rem;
         }
     }}
+}
+
+impl Hasher for XXHasher {
+    type Output = u32;
+
+    fn reset(&mut self) { #![inline]
+        self.v1 = self.seed + PRIME1 + PRIME2;
+        self.v2 = self.seed + PRIME2;
+        self.v3 = self.seed;
+        self.v4 = self.seed - PRIME1;
+        self.total_len = 0;
+        self.memsize = 0;
+    }
 
     /// Can be called on intermediate states
-    pub fn digest(&self) -> u32 { unsafe {
+    fn finish(&self) -> u32 { unsafe {
         let mut rem = self.memsize;
         let mut h32: u32 = if self.total_len < 16 {
             self.seed + PRIME5
@@ -169,37 +173,8 @@ impl XXState {
     }}
 }
 
-#[derive(Copy)]
-pub struct XXHasher {
-    seed: u32
-}
-
-impl XXHasher {
-    pub fn new() -> XXHasher { #![inline]
-        XXHasher::new_with_seed(0)
-    }
-
-    pub fn new_with_seed(seed: u32) -> XXHasher { #![inline]
-        XXHasher { seed: seed }
-    }
-}
-
-impl Hasher<XXState> for XXHasher {
-    fn hash<T: ?Sized + Hash<XXState>>(&self, value: &T) -> u64 {
-        let mut state = XXState::new_with_seed(self.seed);
-        value.hash(&mut state);
-        state.digest() as u64
-    }
-}
-
-impl Writer for XXState {
-    fn write(&mut self, msg: &[u8]) { #![inline]
-        self.update(msg);
-    }
-}
-
-impl Clone for XXState {
-    fn clone(&self) -> XXState { #![inline]
+impl Clone for XXHasher {
+    fn clone(&self) -> XXHasher { #![inline]
         *self
     }
 }
@@ -210,16 +185,16 @@ impl Default for XXHasher {
     }
 }
 
-pub fn hash<T: Hash<XXState>>(value: &T) -> u64 { #![inline]
-    let mut state = XXState::new_with_seed(0);
+pub fn hash<T: Hash<XXHasher>>(value: &T) -> u64 { #![inline]
+    let mut state = XXHasher::new_with_seed(0);
     value.hash(&mut state);
-    state.digest() as u64
+    state.finish() as u64
 }
 
-pub fn hash_with_seed<T: Hash<XXState>>(seed: u64, value: &T) -> u64 { #![inline]
-    let mut state = XXState::new_with_seed(seed as u32);
+pub fn hash_with_seed<T: Hash<XXHasher>>(seed: u64, value: &T) -> u64 { #![inline]
+    let mut state = XXHasher::new_with_seed(seed as u32);
     value.hash(&mut state);
-    state.digest() as u64
+    state.finish() as u64
 }
 
 /// the official sanity test
@@ -269,20 +244,20 @@ fn bench_base<F>(bench: &mut Bencher, f: F)
 #[test]
 fn test_oneshot() {
     test_base(|&: v, seed|{
-        let mut state = XXState::new_with_seed(seed);
-        state.update(v);
-        state.digest()
+        let mut state = XXHasher::new_with_seed(seed);
+        state.write(v);
+        state.finish()
     })
 }
 
 #[test]
 fn test_chunks() {
     test_base(|v, seed|{
-        let mut state = XXState::new_with_seed(seed);
+        let mut state = XXHasher::new_with_seed(seed);
         for chunk in v.chunks(15) {
-            state.update(chunk);
+            state.write(chunk);
         }
-        state.digest()
+        state.finish()
     })
 }
 

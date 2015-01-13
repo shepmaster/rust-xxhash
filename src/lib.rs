@@ -21,6 +21,7 @@
 #![crate_name="xxhash"]
 #![crate_type="lib"]
 
+#![feature(int_uint)]
 #![allow(unused_assignments, unused_variables)] // `read_ptr!`
 
 #[macro_use] extern crate core;
@@ -40,12 +41,6 @@ use std::default::Default;
 pub mod macros;
 pub mod xxh32;
 
-// TODO: remove this once the int RFC lands
-#[allow(non_camel_case_types)]
-pub type isize = int;
-#[allow(non_camel_case_types)]
-pub type usize = uint;
-
 // large prime, new_with_seed(0) is so boring
 const HAPPY_SEED: u64 = 18446744073709551557_u64;
 
@@ -60,13 +55,13 @@ fn rotl64(x: u64, b: usize) -> u64 { #![inline(always)]
 }
 
 pub fn oneshot(input: &[u8], seed: u64) -> u64 { #![inline]
-    let mut state = XXState::new_with_seed(seed);
-    state.update(input);
-    state.digest()
+    let mut state = XXHasher::new_with_seed(seed);
+    state.write(input);
+    state.finish()
 }
 
 #[derive(Copy)]
-pub struct XXState {
+pub struct XXHasher {
     memory: [u64; 4],
     v1: u64,
     v2: u64,
@@ -77,32 +72,24 @@ pub struct XXState {
     memsize: usize,
 }
 
-impl XXState {
+impl XXHasher {
     /// Unless testing, randomize the seed for each set of
     /// hashes, e.g. when creating a new `HashMap`.
-    pub fn new_with_seed(seed: u64) -> XXState { #![inline]
-        let mut state: XXState = unsafe { uninitialized() };
-        state.reset(seed);
+    pub fn new_with_seed(seed: u64) -> XXHasher { #![inline]
+        let mut state: XXHasher = unsafe { uninitialized() };
+        state.seed = seed;
+        state.reset();
         state
     }
 
-    pub fn new() -> XXState { #![inline]
-        XXState::new_with_seed(HAPPY_SEED)
+    pub fn new() -> XXHasher { #![inline]
+        XXHasher::new_with_seed(HAPPY_SEED)
     }
+}
 
-    /// Reinitialize. The next input will start a new hash.
-    pub fn reset(&mut self, seed: u64) { #![inline]
-        self.seed = seed;
-        self.v1 = seed + PRIME1 + PRIME2;
-        self.v2 = seed + PRIME2;
-        self.v3 = seed;
-        self.v4 = seed - PRIME1;
-        self.total_len = 0;
-        self.memsize = 0;
-    }
-
+impl Writer for XXHasher {
     /// This is where you feed your data in.
-    pub fn update(&mut self, input: &[u8]) { unsafe {
+    fn write(&mut self, input: &[u8]) { unsafe {
         let mem: *mut u8 = transmute(&self.memory);
         let mut rem: usize = input.len();
         let mut data: *const u8 = input.repr().data;
@@ -187,9 +174,23 @@ impl XXState {
             self.memsize = rem;
         }
     }}
+}
+
+impl Hasher for XXHasher {
+    type Output = u64;
+
+    /// Reinitialize. The next input will start a new hash.
+    fn reset(&mut self) { #![inline]
+        self.v1 = self.seed + PRIME1 + PRIME2;
+        self.v2 = self.seed + PRIME2;
+        self.v3 = self.seed;
+        self.v4 = self.seed - PRIME1;
+        self.total_len = 0;
+        self.memsize = 0;
+    }
 
     /// Compute the hash. This can be used for intermediate values too.
-    pub fn digest(&self) -> u64 { #![inline] unsafe {
+    fn finish(&self) -> u64 { #![inline] unsafe {
         let mut rem = self.memsize;
         let mut h64: u64 = if self.total_len < 32 {
             self.seed + PRIME5
@@ -244,40 +245,9 @@ impl XXState {
 
 }
 
-impl Writer for XXState {
-    fn write(&mut self, msg: &[u8]) { #![inline]
-        self.update(msg);
-    }
-}
-
-impl Clone for XXState {
-    fn clone(&self) -> XXState { #![inline]
+impl Clone for XXHasher {
+    fn clone(&self) -> XXHasher { #![inline]
         *self
-    }
-}
-
-/// `XXHasher` computes the xxHash64 algorithm from a stream of bytes.
-#[derive(Copy)]
-pub struct XXHasher {
-    seed: u64
-}
-
-impl XXHasher {
-    pub fn new() -> XXHasher { #![inline]
-        XXHasher::new_with_seed(18446744073709551557u64)
-    }
-
-    pub fn new_with_seed(seed: u64) -> XXHasher { #![inline]
-        XXHasher { seed: seed }
-    }
-}
-
-impl Hasher<XXState> for XXHasher {
-    fn hash<T: ?Sized + Hash<XXState>>(&self, value: &T) -> u64
-    {
-        let mut state = XXState::new_with_seed(self.seed);
-        value.hash(&mut state);
-        state.digest()
     }
 }
 
@@ -287,18 +257,17 @@ impl Default for XXHasher {
     }
 }
 
-pub fn hash<T: ?Sized + Hash<XXState>>(value: &T) -> u64
+pub fn hash<T: ?Sized + Hash<XXHasher>>(value: &T) -> u64
 {
-
-    let mut state = XXState::new();
+    let mut state = XXHasher::new();
     value.hash(&mut state);
-    state.digest()
+    state.finish()
 }
 
-pub fn hash_with_seed<T: Hash<XXState>>(seed: u64, value: &T) -> u64 { #![inline]
-    let mut state = XXState::new_with_seed(seed);
+pub fn hash_with_seed<T: Hash<XXHasher>>(seed: u64, value: &T) -> u64 { #![inline]
+    let mut state = XXHasher::new_with_seed(seed);
     value.hash(&mut state);
-    state.digest()
+    state.finish()
 }
 
 /// the official sanity test
@@ -346,20 +315,20 @@ fn bench_base<F>(bench: &mut Bencher, f: F )
 #[test]
 fn test_oneshot() {
     test_base(|v, seed|{
-        let mut state = XXState::new_with_seed(seed);
-        state.update(v);
-        state.digest()
+        let mut state = XXHasher::new_with_seed(seed);
+        state.write(v);
+        state.finish()
     })
 }
 
 #[test]
 fn test_chunks() {
     test_base(|v, seed|{
-        let mut state = XXState::new_with_seed(seed);
+        let mut state = XXHasher::new_with_seed(seed);
         for chunk in v.chunks(15) {
-            state.update(chunk);
+            state.write(chunk);
         }
-        state.digest()
+        state.finish()
     })
 }
 
