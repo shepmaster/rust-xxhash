@@ -40,7 +40,7 @@ use std::default::Default;
 #[cfg(test)] use test::Bencher;
 
 pub mod macros;
-pub mod xxh32;
+//pub mod xxh32;
 
 // large prime, new_with_seed(0) is so boring
 const HAPPY_SEED: u64 = 18446744073709551557_u64;
