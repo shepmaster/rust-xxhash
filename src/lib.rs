@@ -34,7 +34,7 @@ use std::mem::{uninitialized, transmute};
 use std::num::Int;
 use std::raw::{Repr};
 use std::ptr::{copy_memory};
-use std::hash::{Hash, Hasher, Writer};
+use std::hash::{Hash, Hasher};
 use std::default::Default;
 
 #[cfg(test)] use test::Bencher;
@@ -79,7 +79,12 @@ impl XXHasher {
     pub fn new_with_seed(seed: u64) -> XXHasher { #![inline]
         let mut state: XXHasher = unsafe { uninitialized() };
         state.seed = seed;
-        state.reset();
+        state.v1 = state.seed + PRIME1 + PRIME2;
+        state.v2 = state.seed + PRIME2;
+        state.v3 = state.seed;
+        state.v4 = state.seed - PRIME1;
+        state.total_len = 0;
+        state.memsize = 0;
         state
     }
 
@@ -88,7 +93,7 @@ impl XXHasher {
     }
 }
 
-impl Writer for XXHasher {
+impl Hasher for XXHasher {
     /// This is where you feed your data in.
     fn write(&mut self, input: &[u8]) { unsafe {
         let mem: *mut u8 = transmute(&self.memory);
@@ -175,20 +180,6 @@ impl Writer for XXHasher {
             self.memsize = rem;
         }
     }}
-}
-
-impl Hasher for XXHasher {
-    type Output = u64;
-
-    /// Reinitialize. The next input will start a new hash.
-    fn reset(&mut self) { #![inline]
-        self.v1 = self.seed + PRIME1 + PRIME2;
-        self.v2 = self.seed + PRIME2;
-        self.v3 = self.seed;
-        self.v4 = self.seed - PRIME1;
-        self.total_len = 0;
-        self.memsize = 0;
-    }
 
     /// Compute the hash. This can be used for intermediate values too.
     fn finish(&self) -> u64 { #![inline] unsafe {
@@ -258,14 +249,14 @@ impl Default for XXHasher {
     }
 }
 
-pub fn hash<T: ?Sized + Hash<XXHasher>>(value: &T) -> u64
+pub fn hash<T: ?Sized + Hash>(value: &T) -> u64
 {
     let mut state = XXHasher::new();
     value.hash(&mut state);
     state.finish()
 }
 
-pub fn hash_with_seed<T: Hash<XXHasher>>(seed: u64, value: &T) -> u64 { #![inline]
+pub fn hash_with_seed<T: Hash>(seed: u64, value: &T) -> u64 { #![inline]
     let mut state = XXHasher::new_with_seed(seed);
     value.hash(&mut state);
     state.finish()
