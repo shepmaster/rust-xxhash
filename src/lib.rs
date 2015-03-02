@@ -275,7 +275,7 @@ fn test_base<F>(f: F) where F: Fn(&[u8], u64) -> u64 {
         random *= random;
     }
 
-    let test = |&: size: usize, seed: u64, expected: u64| {
+    let test = |size: usize, seed: u64, expected: u64| {
         let result = f(buf.slice_to(size), seed);
         assert_eq!(result, expected);
     };
@@ -326,7 +326,7 @@ fn test_chunks() {
 
 #[bench]
 fn bench_64k_oneshot(b: &mut Bencher) {
-    bench_base(b, |&: v| oneshot(v, 0))
+    bench_base(b, |v| oneshot(v, 0))
 }
 
 /*
